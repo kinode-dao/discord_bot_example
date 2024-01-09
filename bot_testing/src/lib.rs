@@ -38,7 +38,7 @@ impl Guest for Component {
         print_to_terminal(0, "bot_testing: begin");
 
         let our = Address::from_str(&our).unwrap();
-        let bot_token = "MTE5MjEzNDg0ODY5ODEzMDU1Mw.G4xfrT.go7Sxk0zzyreJx1OrOiHgVnULCHofivI23eeCE".to_string();
+        let bot_token = "".to_string();
         let intents = 512; // Guild messages
 
         // Spawn the API process
