@@ -1,0 +1,16 @@
+[
+    {
+        "process_name": "bot_testing",
+        "process_wasm_path": "/bot_testing.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_messaging": [
+            "net:sys:uqbar",
+            "http_client:sys:uqbar"
+        ],
+        "grant_messaging": [
+            "http_client:sys:uqbar"
+        ],
+        "public": true
+    }
+]
