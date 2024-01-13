@@ -41,6 +41,20 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "http",
+ "nectar_process_lib",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "discord_api_runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "discord_api",
  "nectar_process_lib",
  "serde",
  "serde_json",

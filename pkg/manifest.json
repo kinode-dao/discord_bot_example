@@ -4,12 +4,14 @@
         "process_wasm_path": "/bot_testing.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
-            "net:sys:uqbar",
-            "http_client:sys:uqbar"
+        "request_capabilities": [
+            "net:sys:nectar",
+            "vfs:sys:nectar",
+            "http_client:sys:nectar"
         ],
-        "grant_messaging": [
-            "http_client:sys:uqbar"
+        "grant_capabilities": [
+            "http_client:sys:nectar",
+            "timer:sys:nectar"
         ],
         "public": true
     }

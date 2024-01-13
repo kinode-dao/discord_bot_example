@@ -1,19 +1,17 @@
+use std::{collections::HashMap, str::FromStr};
+
 use nectar_process_lib::{
-    await_message, get_payload,
+    await_message, get_blob,
     http::{
-        open_ws_connection_and_await, send_ws_client_push, WebSocketClientAction, WsMessageType,
+        open_ws_connection_and_await, send_ws_client_push, HttpClientAction, WsMessageType, OutgoingHttpRequest, close_ws_connection, HttpClientRequest,
     },
     print_to_terminal,
     timer::set_timer,
-    Address, Message, Payload, Response, Request,
+    Address, Message, LazyLoadBlob, Response, Request,
 };
 
-mod types;
-use types::*;
-mod http_api;
-use http_api::*;
-mod gateway_api;
-use gateway_api::*;
+use serde::{Serialize, Deserialize};
+use discord_api::{GatewayReceiveEvent, GatewaySendEvent, GatewayIdentifyProperties, parse_gateway_blob, BotId, DiscordApiRequest, DISCORD_GATEWAY, Bot, Bots, WsChannels};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -22,6 +20,11 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Heartbeat {
+    bot: BotId,
+}
 
 fn connect_gateway(our: &Address, ws_client_channel: &u32) -> anyhow::Result<()> {
     match open_ws_connection_and_await(
@@ -48,21 +51,14 @@ fn connect_gateway(our: &Address, ws_client_channel: &u32) -> anyhow::Result<()>
 
 fn handle_gateway_event(
     our: &Address,
-    parent: &Option<Address>,
-    gateway_connection_open: &mut bool,
-    bot_token: &mut String,
-    intents: &mut u128,
-    ws_client_channel: &u32,
-    heartbeat_interval: &mut u64,
-    heartbeat_sequence: &mut u64,
-    session_id: &mut String,
     event: GatewayReceiveEvent,
+    bot: &mut Bot,
 ) -> anyhow::Result<()> {
     match event {
         GatewayReceiveEvent::Hello(hello) => {
             let send_event = GatewaySendEvent::Identify {
-                token: bot_token.clone(),
-                intents: intents.clone(),
+                token: bot.token.clone(),
+                intents: bot.intents.clone(),
                 properties: GatewayIdentifyProperties {
                     os: "nectar".to_string(),
                     browser: "nectar".to_string(),
@@ -75,14 +71,14 @@ fn handle_gateway_event(
                 guild_subscriptions: None,
             };
 
-            *heartbeat_interval = hello.heartbeat_interval;
-            discord_heartbeat_tick(*heartbeat_interval - 1000);
+            bot.heartbeat_interval = hello.heartbeat_interval;
+            discord_heartbeat_tick(bot.heartbeat_interval - 500, BotId::new(bot.token.clone(), bot.intents));
 
             send_ws_client_push(
                 our.node.clone(),
-                *ws_client_channel,
+                bot.ws_client_channel,
                 WsMessageType::Text,
-                Payload {
+                LazyLoadBlob {
                     mime: None,
                     bytes: GatewaySendEvent::Heartbeat {
                         seq: None,
@@ -93,9 +89,9 @@ fn handle_gateway_event(
 
             send_ws_client_push(
                 our.node.clone(),
-                *ws_client_channel,
+                bot.ws_client_channel,
                 WsMessageType::Text,
-                Payload {
+                LazyLoadBlob {
                     mime: None,
                     bytes: send_event.to_json_bytes(),
                 },
@@ -103,28 +99,26 @@ fn handle_gateway_event(
         }
         GatewayReceiveEvent::Ready(ready) => {
             print_to_terminal(0, &format!("discord_api: READY {:?}", ready));
-            *session_id = ready.session_id.clone();
-            *gateway_connection_open = true;
-            if let Some(parent) = parent {
-                Request::new()
-                    .target(parent.clone())
-                    .body(serde_json::json!(ready).to_string().into_bytes())
-                    .send()?;
-            }
+            bot.session_id = ready.session_id.clone();
+            bot.gateway_connection_open = true;
+            Request::new()
+                .target(bot.parent.clone())
+                .body(serde_json::json!(ready).to_string().into_bytes())
+                .send()?;
         }
         GatewayReceiveEvent::Reconnect => {
             print_to_terminal(0, &format!("discord_api: RECONNECT"));
             let send_event = GatewaySendEvent::Resume {
-                token: bot_token.clone(),
-                session_id: session_id.clone(),
-                seq: *heartbeat_sequence,
+                token: bot.token.clone(),
+                session_id: bot.session_id.clone(),
+                seq: bot.heartbeat_sequence,
             };
 
             send_ws_client_push(
                 our.node.clone(),
-                *ws_client_channel,
+                bot.ws_client_channel,
                 WsMessageType::Text,
-                Payload {
+                LazyLoadBlob {
                     mime: None,
                     bytes: send_event.to_json_bytes(),
                 },
@@ -135,16 +129,16 @@ fn handle_gateway_event(
 
             if resumable {
                 let send_event = GatewaySendEvent::Resume {
-                    token: bot_token.clone(),
-                    session_id: session_id.clone(),
-                    seq: *heartbeat_sequence,
+                    token: bot.token.clone(),
+                    session_id: bot.session_id.clone(),
+                    seq: bot.heartbeat_sequence,
                 };
 
                 send_ws_client_push(
                     our.node.clone(),
-                    *ws_client_channel,
+                    bot.ws_client_channel,
                     WsMessageType::Text,
-                    Payload {
+                    LazyLoadBlob {
                         mime: None,
                         bytes: send_event.to_json_bytes(),
                     },
@@ -154,12 +148,10 @@ fn handle_gateway_event(
         _ => {
             print_to_terminal(0, &format!("discord_api: OTHER EVENT: {:?}", event));
             // Pass all the others to the parent process
-            if let Some(parent) = parent {
-                Request::new()
-                    .target(parent.clone())
-                    .body(serde_json::json!(event).to_string().into_bytes())
-                    .send()?;
-            }
+            Request::new()
+                .target(bot.parent.clone())
+                .body(serde_json::json!(event).to_string().into_bytes())
+                .send()?;
         }
     }
 
@@ -168,14 +160,8 @@ fn handle_gateway_event(
 
 fn handle_message(
     our: &Address,
-    parent: &mut Option<Address>,
-    gateway_connection_open: &mut bool,
-    bot_token: &mut String,
-    intents: &mut u128,
-    heartbeat_interval: &mut u64,
-    heartbeat_sequence: &mut u64,
-    ws_client_channel: &u32,
-    session_id: &mut String,
+    bots: &mut Bots,
+    channels: &mut WsChannels,
 ) -> anyhow::Result<()> {
     let message = await_message().unwrap();
 
@@ -184,34 +170,33 @@ fn handle_message(
             print_to_terminal(0, &format!("discord_api: Response"));
 
             if let Some(context) = context {
-                let Ok(context) = String::from_utf8(context.clone()) else {
-                    print_to_terminal(0, "discord_api: Response: context is not a String");
-                    return Ok(());
-                };
-
-                if context == "discord_heartbeat" && *gateway_connection_open {
-                    match send_ws_client_push(
-                        our.node.clone(),
-                        *ws_client_channel,
-                        WsMessageType::Text,
-                        Payload {
-                            mime: None,
-                            bytes: GatewaySendEvent::Heartbeat {
-                                seq: Some(*heartbeat_sequence),
+                if let Ok(context) = serde_json::from_slice::<Heartbeat>(&context) {
+                    if let Some(bot) = bots.get(&context.bot) {
+                        if bot.gateway_connection_open {
+                            match send_ws_client_push(
+                                our.node.clone(),
+                                bot.ws_client_channel,
+                                WsMessageType::Text,
+                                LazyLoadBlob {
+                                    mime: None,
+                                    bytes: GatewaySendEvent::Heartbeat {
+                                        seq: Some(bot.heartbeat_sequence),
+                                    }
+                                    .to_json_bytes(),
+                                },
+                            ) {
+                                Ok(_) => discord_heartbeat_tick(bot.heartbeat_interval, context.bot),
+                                Err(e) => {
+                                    print_to_terminal(
+                                        0,
+                                        &format!("discord_api: error sending heartbeat: {:?}", e),
+                                    );
+                                }
                             }
-                            .to_json_bytes(),
-                        },
-                    ) {
-                        Ok(_) => discord_heartbeat_tick(*heartbeat_interval),
-                        Err(e) => {
-                            print_to_terminal(
-                                0,
-                                &format!("discord_api: error sending heartbeat: {:?}", e),
-                            );
+
+                            return Ok(());
                         }
                     }
-
-                    return Ok(());
                 }
             }
         }
@@ -220,61 +205,127 @@ fn handle_message(
             ref body,
             ..
         } => {
-            // Handle the initial request to connect to the gateway
-            if let Ok(connect) = serde_json::from_slice::<ConnectGateway>(&body) {
-                *bot_token = connect.bot_token.clone();
-                *intents = connect.intents.clone();
-                *parent = Some(source.clone());
+            // Handle requests with body of type DiscordApiRequest
+            if let Ok(api_req) = serde_json::from_slice::<DiscordApiRequest>(&body) {
+                match api_req {
+                    DiscordApiRequest::Connect(bot_id) => {
+                        let ws_client_channel = bots.len() as u32;
+                        let bot = Bot {
+                            parent: source.clone(),
+                            token: bot_id.token.clone(),
+                            intents: bot_id.intents.clone(),
+                            gateway_connection_open: false,
+                            heartbeat_interval: 0,
+                            heartbeat_sequence: 0,
+                            session_id: "".to_string(),
+                            ws_client_channel,
+                        };
 
-                connect_gateway(our, ws_client_channel)?;
+                        bots.insert(BotId::new(bot.token.clone(), bot.intents), bot);
+                        channels.insert(ws_client_channel, bot_id);
+
+                        connect_gateway(our, &ws_client_channel)?;
+                    }
+                    DiscordApiRequest::Disconnect(bot_id) => {
+                        if let Some(bot) = bots.get_mut(&bot_id) {
+                            bot.gateway_connection_open = false;
+                            bot.heartbeat_interval = 0;
+                            bot.heartbeat_sequence = 0;
+                            bot.session_id = "".to_string();
+
+                            // Send a close message to http_client
+                            close_ws_connection(our.node.clone(), bot.ws_client_channel)?;
+
+                            bots.remove(&bot_id);
+                        }
+                    }
+                    DiscordApiRequest::Gateway { bot, event } => {
+                        // Send a gateway event as a Gateway request via websocket through http_client
+                    }
+                    DiscordApiRequest::Http { bot, call } => {
+                        // Send an http request to http_client
+                        let (url, method, http_body) = call.to_request();
+                        let mut headers = HashMap::new();
+                        headers.insert("Authorization".to_string(), format!("Bot {}", bot.token));
+                        headers.insert("Content-Type".to_string(), "application/json".to_string());
+                        headers.insert("User-Agent".to_string(), format!("DiscordBot ({}, {})", "https://uqbar.network", "1.0"));
+
+                        let http_req = OutgoingHttpRequest {
+                            method: method.to_string(),
+                            version: None,
+                            url: url.to_string(),
+                            headers,
+                        };
+
+                        print_to_terminal(0, &format!("discord_api: http request: {:?}", http_req));
+
+                        let _ = Request::new()
+                            .target(("our", "http_client", "sys", "nectar"))
+                            .inherit(true) // Send response to the process that requested
+                            .body(serde_json::to_vec(&HttpClientAction::Http(http_req))?)
+                            .blob_bytes(http_body)
+                            .send()?;
+                    }
+                }
 
                 return Ok(());
             }
 
-            // Handle
-            if let Ok(ws_message) = serde_json::from_slice::<WebSocketClientAction>(&body) {
+            // Handle incoming WebSocket messages from http_client
+            if let Ok(ws_message) = serde_json::from_slice::<HttpClientRequest>(&body) {
                 match ws_message {
                     // Handle an incoming message from Discord Gateway API (via http_client)
-                    WebSocketClientAction::Push { .. } => {
-                        let Some(payload) = get_payload() else {
-                            print_to_terminal(0, "discord_api: ws push: no payload");
+                    HttpClientRequest::WebSocketPush { channel_id, .. } => {
+                        let Some(blob) = get_blob() else {
+                            print_to_terminal(0, "discord_api: ws push: no blob");
+                            return Ok(());
+                        };
+
+                        let Some(bot_id) = channels.get(&channel_id) else {
+                            print_to_terminal(0, "discord_api: ws push: no bot_id");
+                            return Ok(());
+                        };
+
+                        let Some(bot) = bots.get_mut(&bot_id) else {
+                            print_to_terminal(0, "discord_api: ws push: no bot");
                             return Ok(());
                         };
 
                         // Handle Gateway events
-                        match parse_gateway_payload(&payload.bytes, heartbeat_sequence) {
-                            Ok(event) => {
-                                handle_gateway_event(
-                                    our,
-                                    parent,
-                                    gateway_connection_open,
-                                    bot_token,
-                                    intents,
-                                    ws_client_channel,
-                                    heartbeat_interval,
-                                    heartbeat_sequence,
-                                    session_id,
-                                    event,
-                                )?;
+                        match parse_gateway_blob(&blob.bytes) {
+                            Ok((event, seq)) => {
+                                if let Some(seq) = seq {
+                                    bot.heartbeat_sequence = seq;
+                                }
+
+                                handle_gateway_event(our, event, bot)?;
                             }
                             Err(e) => {
                                 print_to_terminal(
                                     0,
                                     &format!(
-                                        "discord_api: ws push: unable to parse payload: {:?}",
+                                        "discord_api: ws push: unable to parse blob: {:?}",
                                         e
                                     ),
                                 );
                             }
                         }
                     }
-                    WebSocketClientAction::Close { .. } => {
+                    HttpClientRequest::WebSocketClose { channel_id } => {
                         print_to_terminal(0, "discord_api: ws close");
-                        *gateway_connection_open = false;
+                        let Some(bot_id) = channels.get(&channel_id) else {
+                            print_to_terminal(0, "discord_api: ws push: no bot_id");
+                            return Ok(());
+                        };
+
+                        let Some(bot) = bots.get_mut(&bot_id) else {
+                            print_to_terminal(0, "discord_api: ws push: no bot");
+                            return Ok(());
+                        };
+                        bot.gateway_connection_open = false;
+
                         // TODO: reopen connection if closed, also clear current timers
                     }
-                    WebSocketClientAction::Open { .. } => {} // This request type is only sent to http_client
-                    WebSocketClientAction::Response { .. } => {} // This request type only comes back as a response
                 }
             } else {
                 print_to_terminal(0, &format!("discord_api: Request: {:?}", message));
@@ -290,26 +341,14 @@ impl Guest for Component {
         print_to_terminal(0, "discord_api: begin");
 
         let our = Address::from_str(&our).unwrap();
-        let mut parent: Option<Address> = None;
-        let mut gateway_connection_open = false;
-        let mut bot_token = String::new();
-        let mut heartbeat_interval = 0;
-        let mut heartbeat_sequence = 0;
-        let mut intents: u128 = 74;
-        let mut session_id = String::new();
-        let ws_client_channel = 0;
+        let mut bots: Bots = HashMap::new();
+        let mut channels: WsChannels = HashMap::new();
 
         loop {
             match handle_message(
                 &our,
-                &mut parent,
-                &mut gateway_connection_open,
-                &mut bot_token,
-                &mut intents,
-                &mut heartbeat_interval,
-                &mut heartbeat_sequence,
-                &ws_client_channel,
-                &mut session_id,
+                &mut bots,
+                &mut channels,
             ) {
                 Ok(()) => {}
                 Err(e) => {
@@ -320,6 +359,6 @@ impl Guest for Component {
     }
 }
 
-fn discord_heartbeat_tick(interval: u64) {
-    set_timer(interval, Some("discord_heartbeat".to_string().into_bytes()));
+fn discord_heartbeat_tick(interval: u64, bot: BotId) {
+    set_timer(interval, Some(serde_json::to_vec(&Heartbeat { bot }).unwrap()));
 }
