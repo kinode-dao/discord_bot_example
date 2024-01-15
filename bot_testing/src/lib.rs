@@ -1,8 +1,9 @@
+use discord_api::{BotId, DiscordApiRequest, GatewayReceiveEvent, HttpApiCall, MessagesCall};
+use nectar_process_lib::{
+    await_message, our_capabilities, print_to_terminal, spawn, Address, Message, OnExit, ProcessId,
+    Request, SendError,
+};
 use std::str::FromStr;
-
-use nectar_process_lib::{await_message, print_to_terminal, spawn, Message, Address, OnExit, ProcessId, Request, SendError, our_capabilities};
-
-use discord_api::{GatewayReceiveEvent, HttpApiCall, MessagesCall, DiscordApiRequest, BotId};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -13,12 +14,12 @@ wit_bindgen::generate!({
 });
 
 fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> anyhow::Result<()> {
-    let message = await_message().unwrap();
+    let message = await_message()?;
 
     match message {
         Message::Response { body, .. } => {
             // Handle responses to Discord API HTTP requests here
-            let response = String::from_utf8(body).unwrap();
+            let response = String::from_utf8(body)?;
             print_to_terminal(0, &format!("bot_testing: Response {:?}", response));
         }
         Message::Request {
@@ -40,22 +41,35 @@ fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> any
 
                         // Check if message.content includes a twitter link, if so delete the message and rewrite to vxtwitter with attribution
                         if content.contains("/twitter.com") {
-                            let delete = HttpApiCall::Messages(MessagesCall::Delete { channel_id: message.channel_id.clone(), message_id: message.id });
+                            let delete = HttpApiCall::Messages(MessagesCall::Delete {
+                                channel_id: message.channel_id.clone(),
+                                message_id: message.id,
+                            });
                             let _ = Request::new()
                                 .target((our.node.as_ref(), discord_api_id.clone()))
-                                .body(serde_json::to_vec(& DiscordApiRequest::Http { bot: bot.clone(), call: delete }).unwrap())
+                                .body(serde_json::to_vec(&DiscordApiRequest::Http {
+                                    bot: bot.clone(),
+                                    call: delete,
+                                })?)
                                 .send_and_await_response(5)?;
 
                             let Some(author) = message.author else {
                                 return Ok(());
                             };
                             let new_copy = content.replace("twitter.com", "vxtwitter.com");
-                            let new_content = format!("<@{}> shared a link:\n{}", author.id, new_copy);
+                            let new_content =
+                                format!("<@{}> shared a link:\n{}", author.id, new_copy);
 
-                            let create = HttpApiCall::Messages(MessagesCall::Create { channel_id: message.channel_id, content: new_content });
+                            let create = HttpApiCall::Messages(MessagesCall::Create {
+                                channel_id: message.channel_id,
+                                content: new_content,
+                            });
                             Request::new()
                                 .target((our.node.as_ref(), discord_api_id.clone()))
-                                .body(serde_json::to_vec(& DiscordApiRequest::Http { bot: bot.clone(), call: create }).unwrap())
+                                .body(serde_json::to_vec(&DiscordApiRequest::Http {
+                                    bot: bot.clone(),
+                                    call: create,
+                                })?)
                                 .expects_response(5)
                                 .send()?;
                         }
@@ -79,7 +93,10 @@ fn init_discord_api(
         &format!("{}/pkg/discord_api.wasm", our.package_id()),
         OnExit::Restart,
         our_capabilities(),
-        vec![ProcessId::new(Some("http_client"), "sys", "nectar"), ProcessId::new(Some("timer"), "sys", "nectar")],
+        vec![
+            ProcessId::new(Some("http_client"), "sys", "nectar"),
+            ProcessId::new(Some("timer"), "sys", "nectar"),
+        ],
         false, // not public
     ) else {
         return Err(anyhow::anyhow!("failed to spawn discord_api!"));
@@ -87,7 +104,9 @@ fn init_discord_api(
 
     let result = Request::new()
         .target((our.node.as_ref(), discord_api_process_id.clone()))
-        .body(serde_json::to_vec(&DiscordApiRequest::Connect(bot.clone())).unwrap())
+        .body(serde_json::to_vec(&DiscordApiRequest::Connect(
+            bot.clone(),
+        ))?)
         .send_and_await_response(10)?;
 
     Ok((discord_api_process_id, result))

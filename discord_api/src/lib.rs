@@ -1,21 +1,19 @@
-use std::{collections::HashMap, str::FromStr};
-
+use discord_api::{
+    parse_gateway_blob, Bot, BotId, Bots, DiscordApiRequest, GatewayIdentifyProperties,
+    GatewayReceiveEvent, GatewaySendEvent, WsChannels, DISCORD_GATEWAY,
+};
 use nectar_process_lib::{
     await_message, get_blob, get_state,
     http::{
         close_ws_connection, open_ws_connection_and_await, send_ws_client_push, HttpClientAction,
         HttpClientRequest, OutgoingHttpRequest, WsMessageType,
     },
-    print_to_terminal,
+    print_to_terminal, set_state,
     timer::set_timer,
-    Address, LazyLoadBlob, Message, Request, Response, set_state,
-};
-
-use discord_api::{
-    parse_gateway_blob, Bot, BotId, Bots, DiscordApiRequest, GatewayIdentifyProperties,
-    GatewayReceiveEvent, GatewaySendEvent, WsChannels, DISCORD_GATEWAY,
+    Address, LazyLoadBlob, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, str::FromStr};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -116,7 +114,7 @@ fn handle_gateway_event(
                 .body(serde_json::json!(ready).to_string().into_bytes())
                 .send()?;
 
-            set_state(&serde_json::to_vec(&load_state()).unwrap());
+            set_state(&serde_json::to_vec(&load_state())?);
         }
         GatewayReceiveEvent::Reconnect => {
             print_to_terminal(0, &format!("discord_api: RECONNECT"));
@@ -174,7 +172,7 @@ fn handle_gateway_event(
 }
 
 fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
-    let message = await_message().unwrap();
+    let message = await_message()?;
 
     match message {
         Message::Response { context, .. } => {
@@ -239,7 +237,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                             .insert(BotId::new(bot.token.clone(), bot.intents), bot);
                         state.channels.insert(ws_client_channel, bot_id);
 
-                        set_state(&serde_json::to_vec(state).unwrap());
+                        set_state(&serde_json::to_vec(state)?);
 
                         connect_gateway(our, &ws_client_channel)?;
                     }
@@ -254,7 +252,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                             close_ws_connection(our.node.clone(), bot.ws_client_channel)?;
 
                             state.bots.remove(&bot_id);
-                            set_state(&serde_json::to_vec(state).unwrap());
+                            set_state(&serde_json::to_vec(state)?);
                         }
                     }
                     DiscordApiRequest::Gateway { bot, event } => {
@@ -320,7 +318,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                                 }
 
                                 handle_gateway_event(our, event, bot)?;
-                                set_state(&serde_json::to_vec(state).unwrap());
+                                set_state(&serde_json::to_vec(state)?);
                             }
                             Err(e) => {
                                 print_to_terminal(
@@ -350,7 +348,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
 
                         connect_gateway(our, &bot.ws_client_channel)?;
 
-                        set_state(&serde_json::to_vec(state).unwrap());
+                        set_state(&serde_json::to_vec(state)?);
                     }
                 }
             } else {
