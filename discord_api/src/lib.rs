@@ -1,17 +1,21 @@
 use std::{collections::HashMap, str::FromStr};
 
 use nectar_process_lib::{
-    await_message, get_blob,
+    await_message, get_blob, get_state,
     http::{
-        open_ws_connection_and_await, send_ws_client_push, HttpClientAction, WsMessageType, OutgoingHttpRequest, close_ws_connection, HttpClientRequest,
+        close_ws_connection, open_ws_connection_and_await, send_ws_client_push, HttpClientAction,
+        HttpClientRequest, OutgoingHttpRequest, WsMessageType,
     },
     print_to_terminal,
     timer::set_timer,
-    Address, Message, LazyLoadBlob, Response, Request,
+    Address, LazyLoadBlob, Message, Request, Response, set_state,
 };
 
-use serde::{Serialize, Deserialize};
-use discord_api::{GatewayReceiveEvent, GatewaySendEvent, GatewayIdentifyProperties, parse_gateway_blob, BotId, DiscordApiRequest, DISCORD_GATEWAY, Bot, Bots, WsChannels};
+use discord_api::{
+    parse_gateway_blob, Bot, BotId, Bots, DiscordApiRequest, GatewayIdentifyProperties,
+    GatewayReceiveEvent, GatewaySendEvent, WsChannels, DISCORD_GATEWAY,
+};
+use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -20,6 +24,12 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
+
+#[derive(Serialize, Deserialize, Debug)]
+struct State {
+    bots: Bots,
+    channels: WsChannels,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Heartbeat {
@@ -72,7 +82,10 @@ fn handle_gateway_event(
             };
 
             bot.heartbeat_interval = hello.heartbeat_interval;
-            discord_heartbeat_tick(bot.heartbeat_interval - 500, BotId::new(bot.token.clone(), bot.intents));
+            discord_heartbeat_tick(
+                bot.heartbeat_interval - 1000,
+                BotId::new(bot.token.clone(), bot.intents),
+            );
 
             send_ws_client_push(
                 our.node.clone(),
@@ -80,10 +93,7 @@ fn handle_gateway_event(
                 WsMessageType::Text,
                 LazyLoadBlob {
                     mime: None,
-                    bytes: GatewaySendEvent::Heartbeat {
-                        seq: None,
-                    }
-                    .to_json_bytes(),
+                    bytes: GatewaySendEvent::Heartbeat { seq: None }.to_json_bytes(),
                 },
             )?;
 
@@ -105,6 +115,8 @@ fn handle_gateway_event(
                 .target(bot.parent.clone())
                 .body(serde_json::json!(ready).to_string().into_bytes())
                 .send()?;
+
+            set_state(&serde_json::to_vec(&load_state()).unwrap());
         }
         GatewayReceiveEvent::Reconnect => {
             print_to_terminal(0, &format!("discord_api: RECONNECT"));
@@ -125,7 +137,10 @@ fn handle_gateway_event(
             )?;
         }
         GatewayReceiveEvent::InvalidSession(resumable) => {
-            print_to_terminal(0, &format!("discord_api: INVALID SESSION, resumable: {:?}", resumable));
+            print_to_terminal(
+                0,
+                &format!("discord_api: INVALID SESSION, resumable: {:?}", resumable),
+            );
 
             if resumable {
                 let send_event = GatewaySendEvent::Resume {
@@ -158,11 +173,7 @@ fn handle_gateway_event(
     Ok(())
 }
 
-fn handle_message(
-    our: &Address,
-    bots: &mut Bots,
-    channels: &mut WsChannels,
-) -> anyhow::Result<()> {
+fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
     let message = await_message().unwrap();
 
     match message {
@@ -171,7 +182,7 @@ fn handle_message(
 
             if let Some(context) = context {
                 if let Ok(context) = serde_json::from_slice::<Heartbeat>(&context) {
-                    if let Some(bot) = bots.get(&context.bot) {
+                    if let Some(bot) = state.bots.get(&context.bot) {
                         if bot.gateway_connection_open {
                             match send_ws_client_push(
                                 our.node.clone(),
@@ -185,7 +196,9 @@ fn handle_message(
                                     .to_json_bytes(),
                                 },
                             ) {
-                                Ok(_) => discord_heartbeat_tick(bot.heartbeat_interval, context.bot),
+                                Ok(_) => {
+                                    discord_heartbeat_tick(bot.heartbeat_interval, context.bot)
+                                }
                                 Err(e) => {
                                     print_to_terminal(
                                         0,
@@ -209,7 +222,7 @@ fn handle_message(
             if let Ok(api_req) = serde_json::from_slice::<DiscordApiRequest>(&body) {
                 match api_req {
                     DiscordApiRequest::Connect(bot_id) => {
-                        let ws_client_channel = bots.len() as u32;
+                        let ws_client_channel = state.bots.len() as u32;
                         let bot = Bot {
                             parent: source.clone(),
                             token: bot_id.token.clone(),
@@ -221,13 +234,17 @@ fn handle_message(
                             ws_client_channel,
                         };
 
-                        bots.insert(BotId::new(bot.token.clone(), bot.intents), bot);
-                        channels.insert(ws_client_channel, bot_id);
+                        state
+                            .bots
+                            .insert(BotId::new(bot.token.clone(), bot.intents), bot);
+                        state.channels.insert(ws_client_channel, bot_id);
+
+                        set_state(&serde_json::to_vec(state).unwrap());
 
                         connect_gateway(our, &ws_client_channel)?;
                     }
                     DiscordApiRequest::Disconnect(bot_id) => {
-                        if let Some(bot) = bots.get_mut(&bot_id) {
+                        if let Some(bot) = state.bots.get_mut(&bot_id) {
                             bot.gateway_connection_open = false;
                             bot.heartbeat_interval = 0;
                             bot.heartbeat_sequence = 0;
@@ -236,7 +253,8 @@ fn handle_message(
                             // Send a close message to http_client
                             close_ws_connection(our.node.clone(), bot.ws_client_channel)?;
 
-                            bots.remove(&bot_id);
+                            state.bots.remove(&bot_id);
+                            set_state(&serde_json::to_vec(state).unwrap());
                         }
                     }
                     DiscordApiRequest::Gateway { bot, event } => {
@@ -248,7 +266,10 @@ fn handle_message(
                         let mut headers = HashMap::new();
                         headers.insert("Authorization".to_string(), format!("Bot {}", bot.token));
                         headers.insert("Content-Type".to_string(), "application/json".to_string());
-                        headers.insert("User-Agent".to_string(), format!("DiscordBot ({}, {})", "https://uqbar.network", "1.0"));
+                        headers.insert(
+                            "User-Agent".to_string(),
+                            format!("DiscordBot ({}, {})", "https://uqbar.network", "1.0"),
+                        );
 
                         let http_req = OutgoingHttpRequest {
                             method: method.to_string(),
@@ -281,12 +302,12 @@ fn handle_message(
                             return Ok(());
                         };
 
-                        let Some(bot_id) = channels.get(&channel_id) else {
+                        let Some(bot_id) = state.channels.get(&channel_id) else {
                             print_to_terminal(0, "discord_api: ws push: no bot_id");
                             return Ok(());
                         };
 
-                        let Some(bot) = bots.get_mut(&bot_id) else {
+                        let Some(bot) = state.bots.get_mut(&bot_id) else {
                             print_to_terminal(0, "discord_api: ws push: no bot");
                             return Ok(());
                         };
@@ -299,32 +320,37 @@ fn handle_message(
                                 }
 
                                 handle_gateway_event(our, event, bot)?;
+                                set_state(&serde_json::to_vec(state).unwrap());
                             }
                             Err(e) => {
                                 print_to_terminal(
                                     0,
-                                    &format!(
-                                        "discord_api: ws push: unable to parse blob: {:?}",
-                                        e
-                                    ),
+                                    &format!("discord_api: ws push: unable to parse blob: {:?}", e),
                                 );
                             }
                         }
                     }
                     HttpClientRequest::WebSocketClose { channel_id } => {
                         print_to_terminal(0, "discord_api: ws close");
-                        let Some(bot_id) = channels.get(&channel_id) else {
+                        let Some(bot_id) = state.channels.get(&channel_id) else {
                             print_to_terminal(0, "discord_api: ws push: no bot_id");
                             return Ok(());
                         };
 
-                        let Some(bot) = bots.get_mut(&bot_id) else {
+                        let Some(bot) = state.bots.get_mut(&bot_id) else {
                             print_to_terminal(0, "discord_api: ws push: no bot");
                             return Ok(());
                         };
-                        bot.gateway_connection_open = false;
 
-                        // TODO: reopen connection if closed, also clear current timers
+                        // Reopen connection if closed, also clear current timers and set_state again
+                        bot.gateway_connection_open = false;
+                        bot.heartbeat_interval = 0;
+                        bot.heartbeat_sequence = 0;
+                        bot.session_id = "".to_string();
+
+                        connect_gateway(our, &bot.ws_client_channel)?;
+
+                        set_state(&serde_json::to_vec(state).unwrap());
                     }
                 }
             } else {
@@ -335,21 +361,39 @@ fn handle_message(
     Ok(())
 }
 
+fn discord_heartbeat_tick(interval: u64, bot: BotId) {
+    set_timer(
+        interval,
+        Some(serde_json::to_vec(&Heartbeat { bot }).unwrap()),
+    );
+}
+
+fn load_state() -> State {
+    match get_state() {
+        Some(state) => match serde_json::from_slice::<State>(&state) {
+            Ok(state) => state,
+            Err(_) => State {
+                bots: HashMap::new(),
+                channels: HashMap::new(),
+            },
+        },
+        None => State {
+            bots: HashMap::new(),
+            channels: HashMap::new(),
+        },
+    }
+}
+
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
         print_to_terminal(0, "discord_api: begin");
 
         let our = Address::from_str(&our).unwrap();
-        let mut bots: Bots = HashMap::new();
-        let mut channels: WsChannels = HashMap::new();
+        let mut state = load_state();
 
         loop {
-            match handle_message(
-                &our,
-                &mut bots,
-                &mut channels,
-            ) {
+            match handle_message(&our, &mut state) {
                 Ok(()) => {}
                 Err(e) => {
                     print_to_terminal(0, format!("discord_api: error: {:?}", e,).as_str());
@@ -357,8 +401,4 @@ impl Guest for Component {
             };
         }
     }
-}
-
-fn discord_heartbeat_tick(interval: u64, bot: BotId) {
-    set_timer(interval, Some(serde_json::to_vec(&Heartbeat { bot }).unwrap()));
 }
