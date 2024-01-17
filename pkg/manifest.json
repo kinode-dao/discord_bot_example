@@ -1,17 +1,17 @@
 [
     {
-        "process_name": "bot_testing",
-        "process_wasm_path": "/bot_testing.wasm",
+        "process_name": "my_bot",
+        "process_wasm_path": "/my_bot.wasm",
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:sys:nectar",
-            "vfs:sys:nectar",
-            "http_client:sys:nectar"
+            "net:distro:sys",
+            "vfs:distro:sys",
+            "http_client:distro:sys"
         ],
         "grant_capabilities": [
-            "http_client:sys:nectar",
-            "timer:sys:nectar"
+            "http_client:distro:sys",
+            "timer:distro:sys"
         ],
         "public": true
     }

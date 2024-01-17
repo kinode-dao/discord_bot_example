@@ -2,7 +2,7 @@ use discord_api::{
     parse_gateway_blob, Bot, BotId, Bots, DiscordApiRequest, GatewayIdentifyProperties,
     GatewayReceiveEvent, GatewaySendEvent, WsChannels, DISCORD_GATEWAY,
 };
-use nectar_process_lib::{
+use kinode_process_lib::{
     await_message, get_blob, get_state,
     http::{
         close_ws_connection, open_ws_connection_and_await, send_ws_client_push, HttpClientAction,
@@ -68,9 +68,9 @@ fn handle_gateway_event(
                 token: bot.token.clone(),
                 intents: bot.intents.clone(),
                 properties: GatewayIdentifyProperties {
-                    os: "nectar".to_string(),
-                    browser: "nectar".to_string(),
-                    device: "nectar".to_string(),
+                    os: "kinode".to_string(),
+                    browser: "kinode".to_string(),
+                    device: "kinode".to_string(),
                 },
                 compress: None,
                 large_threshold: None,
@@ -279,7 +279,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                         print_to_terminal(0, &format!("discord_api: http request: {:?}", http_req));
 
                         let _ = Request::new()
-                            .target(("our", "http_client", "sys", "nectar"))
+                            .target(("our", "http_client", "sys", "kinode"))
                             .inherit(true) // Send response to the process that requested
                             .body(serde_json::to_vec(&HttpClientAction::Http(http_req))?)
                             .blob_bytes(http_body)

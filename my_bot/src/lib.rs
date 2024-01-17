@@ -1,5 +1,5 @@
 use discord_api::{BotId, DiscordApiRequest, GatewayReceiveEvent, HttpApiCall, MessagesCall};
-use nectar_process_lib::{
+use kinode_process_lib::{
     await_message, our_capabilities, print_to_terminal, spawn, Address, Message, OnExit, ProcessId,
     Request, SendError,
 };
@@ -20,7 +20,7 @@ fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> any
         Message::Response { body, .. } => {
             // Handle responses to Discord API HTTP requests here
             let response = String::from_utf8(body)?;
-            print_to_terminal(0, &format!("bot_testing: Response {:?}", response));
+            print_to_terminal(0, &format!("my_bot: Response {:?}", response));
         }
         Message::Request {
             ref source,
@@ -28,10 +28,10 @@ fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> any
             ..
         } => {
             // Handle Discord API events
-            print_to_terminal(0, &format!("bot_testing: Request"));
+            print_to_terminal(0, &format!("my_bot: Request"));
 
             if let Ok(event) = serde_json::from_slice::<GatewayReceiveEvent>(&body) {
-                print_to_terminal(0, &format!("bot_testing: Discord API Event: {:?}", event));
+                print_to_terminal(0, &format!("my_bot: Discord API Event: {:?}", event));
 
                 match event {
                     GatewayReceiveEvent::MessageCreate(message) => {
@@ -94,8 +94,8 @@ fn init_discord_api(
         OnExit::Restart,
         our_capabilities(),
         vec![
-            ProcessId::new(Some("http_client"), "sys", "nectar"),
-            ProcessId::new(Some("timer"), "sys", "nectar"),
+            ProcessId::new(Some("http_client"), "sys", "kinode"),
+            ProcessId::new(Some("timer"), "sys", "kinode"),
         ],
         false, // not public
     ) else {
@@ -115,7 +115,7 @@ fn init_discord_api(
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        print_to_terminal(0, "bot_testing: begin");
+        print_to_terminal(0, "my_bot: begin");
 
         let our = Address::from_str(&our).unwrap();
 
@@ -130,10 +130,10 @@ impl Guest for Component {
 
         match result {
             Ok(_) => {
-                print_to_terminal(0, "bot_testing: discord_api spawned");
+                print_to_terminal(0, "my_bot: discord_api spawned");
             }
             Err(e) => {
-                print_to_terminal(0, format!("bot_testing: error: {:?}", e,).as_str());
+                print_to_terminal(0, format!("my_bot: error: {:?}", e,).as_str());
             }
         }
 
@@ -141,7 +141,7 @@ impl Guest for Component {
             match handle_message(&our, &discord_api_id, &bot) {
                 Ok(()) => {}
                 Err(e) => {
-                    print_to_terminal(0, format!("bot_testing: error: {:?}", e,).as_str());
+                    print_to_terminal(0, format!("my_bot: error: {:?}", e,).as_str());
                 }
             };
         }
