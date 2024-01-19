@@ -43,10 +43,10 @@ fn connect_gateway(our: &Address, ws_client_channel: &u32) -> anyhow::Result<()>
     ) {
         Ok(result) => match result {
             Ok(_) => {
-                print_to_terminal(0, "discord_api: ws: connected");
+                // print_to_terminal(0, "discord_api: ws: connected");
             }
             Err(_) => {
-                print_to_terminal(0, "discord_api: ws: error connecting");
+                // print_to_terminal(0, "discord_api: ws: error connecting");
             }
         },
         Err(_) => {}
@@ -62,6 +62,8 @@ fn handle_gateway_event(
     event: GatewayReceiveEvent,
     bot: &mut Bot,
 ) -> anyhow::Result<()> {
+    // Handle all events that have to do with the gateway connection
+    // Forward all other events to the parent process
     match event {
         GatewayReceiveEvent::Hello(hello) => {
             let send_event = GatewaySendEvent::Identify {
@@ -106,18 +108,19 @@ fn handle_gateway_event(
             )?;
         }
         GatewayReceiveEvent::Ready(ready) => {
-            print_to_terminal(0, &format!("discord_api: READY {:?}", ready));
+            print_to_terminal(1, &format!("discord_api: READY {:?}", ready));
             bot.session_id = ready.session_id.clone();
             bot.gateway_connection_open = true;
+
             Request::new()
                 .target(bot.parent.clone())
                 .body(serde_json::json!(ready).to_string().into_bytes())
                 .send()?;
 
-            set_state(&serde_json::to_vec(&load_state())?);
+            // set_state(&serde_json::to_vec(&load_state())?);
         }
         GatewayReceiveEvent::Reconnect => {
-            print_to_terminal(0, &format!("discord_api: RECONNECT"));
+            print_to_terminal(1, &format!("discord_api: RECONNECT"));
             let send_event = GatewaySendEvent::Resume {
                 token: bot.token.clone(),
                 session_id: bot.session_id.clone(),
@@ -135,10 +138,10 @@ fn handle_gateway_event(
             )?;
         }
         GatewayReceiveEvent::InvalidSession(resumable) => {
-            print_to_terminal(
-                0,
-                &format!("discord_api: INVALID SESSION, resumable: {:?}", resumable),
-            );
+            // print_to_terminal(
+            //     0,
+            //     &format!("discord_api: INVALID SESSION, resumable: {:?}", resumable),
+            // );
 
             if resumable {
                 let send_event = GatewaySendEvent::Resume {
@@ -159,7 +162,7 @@ fn handle_gateway_event(
             }
         }
         _ => {
-            print_to_terminal(0, &format!("discord_api: OTHER EVENT: {:?}", event));
+            // print_to_terminal(0, &format!("discord_api: OTHER EVENT: {:?}", event));
             // Pass all the others to the parent process
             Request::new()
                 .target(bot.parent.clone())
@@ -176,7 +179,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
 
     match message {
         Message::Response { context, .. } => {
-            print_to_terminal(0, &format!("discord_api: Response"));
+            // print_to_terminal(0, &format!("discord_api: Response"));
 
             if let Some(context) = context {
                 if let Ok(context) = serde_json::from_slice::<Heartbeat>(&context) {
@@ -198,10 +201,10 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                                     discord_heartbeat_tick(bot.heartbeat_interval, context.bot)
                                 }
                                 Err(e) => {
-                                    print_to_terminal(
-                                        0,
-                                        &format!("discord_api: error sending heartbeat: {:?}", e),
-                                    );
+                                    // print_to_terminal(
+                                    //     0,
+                                    //     &format!("discord_api: error sending heartbeat: {:?}", e),
+                                    // );
                                 }
                             }
 
@@ -218,6 +221,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
         } => {
             // Handle requests with body of type DiscordApiRequest
             if let Ok(api_req) = serde_json::from_slice::<DiscordApiRequest>(&body) {
+                // print_to_terminal(0, &format!("discord_api: Request: {:?}", api_req));
                 match api_req {
                     DiscordApiRequest::Connect(bot_id) => {
                         let ws_client_channel = state.bots.len() as u32;
@@ -237,8 +241,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                             .insert(BotId::new(bot.token.clone(), bot.intents), bot);
                         state.channels.insert(ws_client_channel, bot_id);
 
-                        set_state(&serde_json::to_vec(state)?);
-
+                        // set_state(&serde_json::to_vec(state)?);
                         connect_gateway(our, &ws_client_channel)?;
                     }
                     DiscordApiRequest::Disconnect(bot_id) => {
@@ -252,7 +255,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                             close_ws_connection(our.node.clone(), bot.ws_client_channel)?;
 
                             state.bots.remove(&bot_id);
-                            set_state(&serde_json::to_vec(state)?);
+                            // set_state(&serde_json::to_vec(state)?);
                         }
                     }
                     DiscordApiRequest::Gateway { bot, event } => {
@@ -266,7 +269,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                         headers.insert("Content-Type".to_string(), "application/json".to_string());
                         headers.insert(
                             "User-Agent".to_string(),
-                            format!("DiscordBot ({}, {})", "https://uqbar.network", "1.0"),
+                            format!("DiscordBot ({}, {})", "https://kinode.network", "1.0"),
                         );
 
                         let http_req = OutgoingHttpRequest {
@@ -276,10 +279,8 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                             headers,
                         };
 
-                        print_to_terminal(0, &format!("discord_api: http request: {:?}", http_req));
-
                         let _ = Request::new()
-                            .target(("our", "http_client", "sys", "kinode"))
+                            .target(("our", "http_client", "distro", "sys"))
                             .inherit(true) // Send response to the process that requested
                             .body(serde_json::to_vec(&HttpClientAction::Http(http_req))?)
                             .blob_bytes(http_body)
@@ -296,17 +297,17 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                     // Handle an incoming message from Discord Gateway API (via http_client)
                     HttpClientRequest::WebSocketPush { channel_id, .. } => {
                         let Some(blob) = get_blob() else {
-                            print_to_terminal(0, "discord_api: ws push: no blob");
+                            // print_to_terminal(0, "discord_api: ws push: no blob");
                             return Ok(());
                         };
 
                         let Some(bot_id) = state.channels.get(&channel_id) else {
-                            print_to_terminal(0, "discord_api: ws push: no bot_id");
+                            // print_to_terminal(0, "discord_api: ws push: no bot_id");
                             return Ok(());
                         };
 
                         let Some(bot) = state.bots.get_mut(&bot_id) else {
-                            print_to_terminal(0, "discord_api: ws push: no bot");
+                            // print_to_terminal(0, "discord_api: ws push: no bot");
                             return Ok(());
                         };
 
@@ -318,25 +319,25 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                                 }
 
                                 handle_gateway_event(our, event, bot)?;
-                                set_state(&serde_json::to_vec(state)?);
+                                // set_state(&serde_json::to_vec(state)?);
                             }
                             Err(e) => {
-                                print_to_terminal(
-                                    0,
-                                    &format!("discord_api: ws push: unable to parse blob: {:?}", e),
-                                );
+                                // print_to_terminal(
+                                //     0,
+                                //     &format!("discord_api: ws push: unable to parse blob: {:?}", e),
+                                // );
                             }
                         }
                     }
                     HttpClientRequest::WebSocketClose { channel_id } => {
                         print_to_terminal(0, "discord_api: ws close");
                         let Some(bot_id) = state.channels.get(&channel_id) else {
-                            print_to_terminal(0, "discord_api: ws push: no bot_id");
+                            // print_to_terminal(0, "discord_api: ws push: no bot_id");
                             return Ok(());
                         };
 
                         let Some(bot) = state.bots.get_mut(&bot_id) else {
-                            print_to_terminal(0, "discord_api: ws push: no bot");
+                            // print_to_terminal(0, "discord_api: ws push: no bot");
                             return Ok(());
                         };
 
@@ -348,11 +349,11 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
 
                         connect_gateway(our, &bot.ws_client_channel)?;
 
-                        set_state(&serde_json::to_vec(state)?);
+                        // set_state(&serde_json::to_vec(state)?);
                     }
                 }
             } else {
-                print_to_terminal(0, &format!("discord_api: Request: {:?}", message));
+                // print_to_terminal(0, &format!("discord_api: Request: {:?}", message));
             }
         }
     }

@@ -5,3 +5,6 @@ pkg/*.wasm
 */wasi_snapshot_preview1.wasm
 */wit/
 .cargo
+target/
+*.bot_token
+*.bot_application_id
