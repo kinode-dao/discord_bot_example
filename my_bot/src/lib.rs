@@ -19,8 +19,6 @@ wit_bindgen::generate!({
 
 const BOT_APPLICATION_ID: &str = include_str!("../.bot_application_id");
 const BOT_TOKEN: &str = include_str!("../.bot_token");
-const COINMARKETCAP_API_KEY: &str = include_str!("../.coinmarketcap_api_key");
-const COINMARKETCAP_URL: &str = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 
 call_init!(init);
 
@@ -104,9 +102,9 @@ fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> any
                     return Ok(())
                 };
                 match data.name.as_str() {
-                    // Handle the /price command we registered
-                    "price" => {
-                        let _ = respond_with_price(
+                    // Handle the /pki command we registered
+                    "pki" => {
+                        let _ = respond_with_pki_entry(
                             &our,
                             &bot,
                             &discord_api_id,
@@ -124,7 +122,7 @@ fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> any
     Ok(())
 }
 
-fn respond_with_price(
+fn respond_with_pki_entry(
     our: &Address,
     bot: &BotId,
     discord_api_id: &ProcessId,
@@ -136,51 +134,20 @@ fn respond_with_price(
 
     let content: String = match options.first() {
         Some(option) => {
-            // Get the token symbol
-            let symbol = option
-                .value
-                .as_str()
-                .unwrap_or_default()
-                .to_string()
-                .to_uppercase();
+            // Get the node name
+            let node_id = option.value.as_str().unwrap_or_default().to_string();
 
-            // Get the price from the CoinMarketCap API
-            Request::new()
-                .target((
-                    our.node.as_ref(),
-                    ProcessId::new(Some("http_client"), "distro", "sys"),
-                ))
-                .body(serde_json::to_vec(&HttpClientAction::Http(
-                    OutgoingHttpRequest {
-                        method: "GET".to_string(),
-                        url: format!("{COINMARKETCAP_URL}?symbol={symbol}&convert=USD"),
-                        headers: std::collections::HashMap::from([
-                            ("Accepts".to_string(), "application/json".to_string()),
-                            (
-                                "X-CMC_PRO_API_KEY".to_string(),
-                                COINMARKETCAP_API_KEY.to_string(),
-                            ),
-                        ]),
-                        version: None,
-                    },
-                ))?)
-                .send_and_await_response(3)??;
+            // Get the PKI data from `net:distro:sys`
+            let Message::Response { body, .. } =
+                Request::to((our.node(), ("net", "distro", "sys")))
+                    .body(node_id.as_bytes())
+                    .send_and_await_response(5)?? else {
+                        return Ok(())
+                    };
 
-            // Get the blob from the response, parse and generate the response content
-            match get_blob() {
-                Some(response_data) => {
-                    let price_data =
-                        serde_json::from_slice::<serde_json::Value>(&response_data.bytes)?;
-                    match price_data["data"][&symbol]["quote"]["USD"]["price"].as_f64() {
-                        Some(price) => format!("The current price of {symbol} is ${price}"),
-                        None => "Cryptocurrency not found or API response format has changed."
-                            .to_string(),
-                    }
-                }
-                None => "Unable to get token price.".to_string(),
-            }
+            String::from_utf8(body).unwrap_or_default()
         }
-        None => "No symbol given.".to_string(),
+        None => "No name given.".to_string(),
     };
 
     println!("{our}: responding to command with: {}", content);
