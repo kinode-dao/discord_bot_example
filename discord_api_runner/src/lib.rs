@@ -8,7 +8,7 @@ use kinode_process_lib::{
         close_ws_connection, open_ws_connection_and_await, send_ws_client_push, HttpClientAction,
         HttpClientRequest, OutgoingHttpRequest, WsMessageType,
     },
-    print_to_terminal, set_state,
+    print_to_terminal,
     timer::set_timer,
     Address, LazyLoadBlob, Message, Request, Response,
 };
@@ -200,7 +200,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                                 Ok(_) => {
                                     discord_heartbeat_tick(bot.heartbeat_interval, context.bot)
                                 }
-                                Err(e) => {
+                                Err(_e) => {
                                     // print_to_terminal(
                                     //     0,
                                     //     &format!("discord_api: error sending heartbeat: {:?}", e),
@@ -258,7 +258,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                             // set_state(&serde_json::to_vec(state)?);
                         }
                     }
-                    DiscordApiRequest::Gateway { bot, event } => {
+                    DiscordApiRequest::Gateway { .. } => {
                         // Send a gateway event as a Gateway request via websocket through http_client
                     }
                     DiscordApiRequest::Http { bot, call } => {
@@ -321,7 +321,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                                 handle_gateway_event(our, event, bot)?;
                                 // set_state(&serde_json::to_vec(state)?);
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 // print_to_terminal(
                                 //     0,
                                 //     &format!("discord_api: ws push: unable to parse blob: {:?}", e),

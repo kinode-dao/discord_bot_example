@@ -1,5 +1,9 @@
 {
-    "package": "discord",
-    "publisher": "odinsbadeye.os",
-    "version": [0, 1, 0]
+    "package": "discbots",
+    "publisher": "mothu-et-doria.os",
+    "version": [
+        0,
+        1,
+        0
+    ]
 }

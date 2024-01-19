@@ -1,6 +1,6 @@
 [
     {
-        "process_name": "my_bot",
+        "process_name": "my_first_bot",
         "process_wasm_path": "/my_bot.wasm",
         "on_exit": "Restart",
         "request_networking": true,
