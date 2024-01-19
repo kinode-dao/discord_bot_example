@@ -51,13 +51,13 @@ fn init(our: Address) {
     let command = HttpApiCall::Commands(CommandsCall::CreateApplicationCommand {
         application_id: BOT_APPLICATION_ID.to_string(),
         command: NewApplicationCommand {
-            name: "pki".to_string(),
-            description: Some("Check the PKI entry for a node ID".to_string()),
+            name: "price".to_string(),
+            description: Some("Check the price of a token".to_string()),
             command_type: Some(ApplicationCommandType::ChatInput.as_u8()),
             options: Some(vec![ApplicationCommandOption {
                 option_type: ApplicationCommandOptionType::String.as_u8(),
-                name: "name".to_string(),
-                description: "The node ID".to_string(),
+                name: "token".to_string(),
+                description: "The token to check the price of".to_string(),
                 name_localizations: None,
                 description_localizations: None,
                 required: Some(true),
