@@ -17,5 +17,11 @@ You must have a Discord bot set up. See `Setting up a Discord Bot` for more info
 ## Setting up a Discord Bot
 
 First, follow Step 1 of the (Getting Started guide)[https://discord.com/developers/docs/getting-started].
-With the URL generator, you can give your bot admin access by setting `permissions=8` from the OAuth2 URL.
-You must then put the URL into a browser and add the bot to your server.
+At the end, you should have:
+1. A bot token
+2. An application ID
+3. An OAuth2 URL in the format `https://discord.com/oauth2/authorize?client_id=*your_client_id*&permissions=8&scope=bot`. You should not have a redirect URL or code grant in here.
+
+You can then open that URL in a browser and add the bot to a server of your choice.
+You must have `Manage Server` permissions in order to add the bot.
+You can create your own testing server easily using the `+` button in Discord (at the bottom of the server list).
