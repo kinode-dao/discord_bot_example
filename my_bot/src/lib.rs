@@ -24,6 +24,7 @@ wit_bindgen::generate!({
 
 const BOT_APPLICATION_ID: &str = include_str!("../.bot_application_id");
 const BOT_TOKEN: &str = include_str!("../.bot_token");
+const COINMARKETCAP_API_KEY: &str = include_str!("../.coinmarketcap_api_key");
 
 fn handle_message(our: &Address, discord_api_id: &ProcessId, bot: &BotId) -> anyhow::Result<()> {
     let message = await_message()?;
@@ -151,7 +152,7 @@ fn respond_with_price(
             headers.insert("Accepts".to_string(), "application/json".to_string());
             headers.insert(
                 "X-CMC_PRO_API_KEY".to_string(),
-                "c1b2736b-0c1d-410b-8b0d-707941c32ef6".to_string(),
+                COINMARKETCAP_API_KEY.to_string(),
             );
             // Get the price from the CoinMarketCap API
             let _ = Request::new()
