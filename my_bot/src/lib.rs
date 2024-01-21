@@ -6,7 +6,7 @@ use discord_api::{
 use kinode_process_lib::{
     await_message, call_init, get_blob,
     http::{HttpClientAction, OutgoingHttpRequest},
-    our_capabilities, println, spawn, Address, Message, OnExit, ProcessId, Request, SendError,
+    println, Address, Message, ProcessId, Request, SendError,
 };
 
 wit_bindgen::generate!({
@@ -19,7 +19,6 @@ wit_bindgen::generate!({
 
 const BOT_APPLICATION_ID: &str = include_str!("../.bot_application_id");
 const BOT_TOKEN: &str = include_str!("../.bot_token");
-
 call_init!(init);
 
 fn init(our: Address) {
@@ -28,8 +27,8 @@ fn init(our: Address) {
     let bot = BotId::new(BOT_TOKEN.to_string(), intents);
 
     // Spawn the API process
-    let (discord_api_id, result) = match init_discord_api(&our, &bot) {
-        Ok((id, result)) => (id, result),
+    let result = match init_discord_api(&our, &bot) {
+        Ok(result) => result,
         Err(e) => {
             println!("my_bot: error initiating bot: {e:?}");
             panic!();
@@ -62,6 +61,8 @@ fn init(our: Address) {
             }]),
         },
     });
+
+    let discord_api_id = ProcessId::new(Some("discord_api_runner"), our.package(), our.publisher());
 
     Request::new()
         .target((our.node.as_ref(), discord_api_id.clone()))
@@ -182,28 +183,14 @@ fn respond_with_pki_entry(
 fn init_discord_api(
     our: &Address,
     bot_id: &BotId,
-) -> Result<(ProcessId, Result<Message, SendError>), anyhow::Error> {
-    let Ok(discord_api_process_id) = spawn(
-        None,
-        &format!("{}/pkg/discord_api_runner.wasm", our.package_id()),
-        OnExit::None,
-        our_capabilities(), // give the bot all our capabilities
-        vec![
-            ProcessId::new(Some("http_client"), "distro", "sys"),
-            ProcessId::new(Some("timer"), "distro", "sys"),
-        ],
-        false, // not public
-    ) else {
-        return Err(anyhow::anyhow!("failed to spawn discord_api!"));
-    };
-
-    Ok((
-        discord_api_process_id.clone(),
-        Request::new()
-            .target((our.node.as_ref(), discord_api_process_id))
-            .body(serde_json::to_vec(&DiscordApiRequest::Connect(
-                bot_id.clone(),
-            ))?)
-            .send_and_await_response(5)?,
-    ))
+) -> Result<Result<Message, SendError>, anyhow::Error> {
+    Request::new()
+        .target((
+            our.node.as_ref(),
+            ProcessId::new(Some("discord_api_runner"), our.package(), our.process()),
+        ))
+        .body(serde_json::to_vec(&DiscordApiRequest::Connect(
+            bot_id.clone(),
+        ))?)
+        .send_and_await_response(5)
 }
