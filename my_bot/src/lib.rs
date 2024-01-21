@@ -65,7 +65,7 @@ fn init(our: Address) {
         },
     });
 
-    let discord_api_id = ProcessId::new(Some("discord_api_runner"), our.package(), our.process());
+    let discord_api_id = ProcessId::new(Some("discord_api_runner"), our.package(), our.publisher());
 
     Request::new()
         .target((our.node.as_ref(), discord_api_id.clone()))
@@ -221,7 +221,7 @@ fn init_discord_api(
     Request::new()
         .target((
             our.node.as_ref(),
-            ProcessId::new(Some("discord_api_runner"), our.package(), our.process()),
+            ProcessId::new(Some("discord_api_runner"), our.package(), our.publisher()),
         ))
         .body(serde_json::to_vec(&DiscordApiRequest::Connect(
             bot_id.clone(),
