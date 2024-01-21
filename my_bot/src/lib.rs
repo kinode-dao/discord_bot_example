@@ -4,9 +4,7 @@ use discord_api::{
     InteractionData, InteractionsCall, NewApplicationCommand,
 };
 use kinode_process_lib::{
-    await_message, call_init, get_blob,
-    http::{HttpClientAction, OutgoingHttpRequest},
-    println, Address, Message, ProcessId, Request, SendError,
+    await_message, call_init, println, Address, Message, ProcessId, Request, SendError,
 };
 
 wit_bindgen::generate!({
@@ -22,8 +20,7 @@ const BOT_TOKEN: &str = include_str!("../.bot_token");
 call_init!(init);
 
 fn init(our: Address) {
-    // let intents = 520; // 512 Read + 8 Admin
-    let intents = 8704; // 512 Read + 8192 Manage Messages
+    let intents = 11264; // read, send, and manage messages
     let bot = BotId::new(BOT_TOKEN.to_string(), intents);
 
     // Spawn the API process
@@ -187,7 +184,7 @@ fn init_discord_api(
     Request::new()
         .target((
             our.node.as_ref(),
-            ProcessId::new(Some("discord_api_runner"), our.package(), our.process()),
+            ProcessId::new(Some("discord_api_runner"), our.package(), our.publisher()),
         ))
         .body(serde_json::to_vec(&DiscordApiRequest::Connect(
             bot_id.clone(),

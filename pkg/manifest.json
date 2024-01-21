@@ -12,7 +12,7 @@
         "grant_capabilities": [
             "http_client:distro:sys",
             "timer:distro:sys",
-            "my_first_bot:discbots:mothu-et-doria.os"
+            "pki_bot:discbots:mothu-et-doria.os"
         ],
         "public": false
     },
