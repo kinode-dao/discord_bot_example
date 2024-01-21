@@ -1,5 +1,22 @@
 [
     {
+        "process_name": "discord_api_runner",
+        "process_wasm_path": "/discord_api_runner.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "net:distro:sys",
+            "vfs:distro:sys",
+            "http_client:distro:sys"
+        ],
+        "grant_capabilities": [
+            "http_client:distro:sys",
+            "timer:distro:sys",
+            "my_first_bot:discbots:mothu-et-doria.os"
+        ],
+        "public": false
+    },
+    {
         "process_name": "my_first_bot",
         "process_wasm_path": "/my_bot.wasm",
         "on_exit": "Restart",
@@ -7,7 +24,8 @@
         "request_capabilities": [
             "net:distro:sys",
             "vfs:distro:sys",
-            "http_client:distro:sys"
+            "http_client:distro:sys",
+            "discord_api_runner:discbots:mothu-et-doria.os"
         ],
         "grant_capabilities": [
             "http_client:distro:sys",
