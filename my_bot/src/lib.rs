@@ -65,7 +65,7 @@ fn init(our: Address) {
         },
     });
 
-    let discord_api_id = ProcessId::new(Some("discord_api_runner"), "discbots", "mothu-et-doria.os");
+    let discord_api_id = ProcessId::new(Some("discord_api_runner"), our.package(), our.process());
 
     Request::new()
         .target((our.node.as_ref(), discord_api_id.clone()))
@@ -219,7 +219,10 @@ fn init_discord_api(
     bot_id: &BotId,
 ) -> Result<Result<Message, SendError>, anyhow::Error> {
     Request::new()
-        .target((our.node.as_ref(), ProcessId::new(Some("discord_api_runner"), "discbots", "mothu-et-doria.os"),))
+        .target((
+            our.node.as_ref(),
+            ProcessId::new(Some("discord_api_runner"), our.package(), our.process()),
+        ))
         .body(serde_json::to_vec(&DiscordApiRequest::Connect(
             bot_id.clone(),
         ))?)

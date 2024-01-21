@@ -1,9 +1,9 @@
 {
     "package": "discbots",
-    "publisher": "mothu-et-doria.os",
+    "publisher": "template",
     "version": [
         0,
-        1,
+        2,
         0
     ]
 }

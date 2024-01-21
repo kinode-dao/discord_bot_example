@@ -12,6 +12,8 @@ Feel free to copy this repo and make changes to the `my_bot` process. You will h
 2. Get your application ID (from the General Information page) and put it in a new file `my_bot/.bot_application_id`.
 3. (Optional), if you want to use the `/price` command, put your coinmarketcap API key in `my_bot/.coinmarketcap_api_key`.
 
+Optionally, edit `metadata.json` and `manifest.json` and replace the `template` publisher with your own name.
+
 You must have a Discord bot set up. See `Setting up a Discord Bot` for more info.
 
 ## Setting up a Discord Bot
