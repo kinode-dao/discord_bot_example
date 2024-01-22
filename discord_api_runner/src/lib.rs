@@ -43,10 +43,10 @@ fn connect_gateway(our: &Address, ws_client_channel: &u32) -> anyhow::Result<()>
     ) {
         Ok(result) => match result {
             Ok(_) => {
-                // print_to_terminal(0, "discord_api: ws: connected");
+                print_to_terminal(1, "discord_api: ws: connected");
             }
             Err(_) => {
-                // print_to_terminal(0, "discord_api: ws: error connecting");
+                print_to_terminal(1, "discord_api: ws: error connecting");
             }
         },
         Err(_) => {}
@@ -162,7 +162,7 @@ fn handle_gateway_event(
             }
         }
         _ => {
-            // print_to_terminal(0, &format!("discord_api: OTHER EVENT: {:?}", event));
+            print_to_terminal(1, &format!("discord_api: OTHER EVENT: {:?}", event));
             // Pass all the others to the parent process
             Request::new()
                 .target(bot.parent.clone())
@@ -179,8 +179,6 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
 
     match message {
         Message::Response { context, .. } => {
-            // print_to_terminal(0, &format!("discord_api: Response"));
-
             if let Some(context) = context {
                 if let Ok(context) = serde_json::from_slice::<Heartbeat>(&context) {
                     if let Some(bot) = state.bots.get(&context.bot) {
@@ -219,6 +217,7 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
             ref body,
             ..
         } => {
+            print_to_terminal(2, &format!("request: {:?}", String::from_utf8_lossy(body)));
             // Handle requests with body of type DiscordApiRequest
             if let Ok(api_req) = serde_json::from_slice::<DiscordApiRequest>(&body) {
                 // print_to_terminal(0, &format!("discord_api: Request: {:?}", api_req));
@@ -297,17 +296,17 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                     // Handle an incoming message from Discord Gateway API (via http_client)
                     HttpClientRequest::WebSocketPush { channel_id, .. } => {
                         let Some(blob) = get_blob() else {
-                            // print_to_terminal(0, "discord_api: ws push: no blob");
+                            print_to_terminal(1, "discord_api: ws push: no blob");
                             return Ok(());
                         };
 
                         let Some(bot_id) = state.channels.get(&channel_id) else {
-                            // print_to_terminal(0, "discord_api: ws push: no bot_id");
+                            print_to_terminal(1, "discord_api: ws push: no bot_id");
                             return Ok(());
                         };
 
                         let Some(bot) = state.bots.get_mut(&bot_id) else {
-                            // print_to_terminal(0, "discord_api: ws push: no bot");
+                            print_to_terminal(1, "discord_api: ws push: no bot");
                             return Ok(());
                         };
 
@@ -321,11 +320,11 @@ fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
                                 handle_gateway_event(our, event, bot)?;
                                 // set_state(&serde_json::to_vec(state)?);
                             }
-                            Err(_e) => {
-                                // print_to_terminal(
-                                //     0,
-                                //     &format!("discord_api: ws push: unable to parse blob: {:?}", e),
-                                // );
+                            Err(e) => {
+                                print_to_terminal(
+                                    1,
+                                    &format!("discord_api: ws push: unable to parse blob: {:?}", e),
+                                );
                             }
                         }
                     }
